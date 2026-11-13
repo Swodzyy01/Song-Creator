@@ -219,13 +219,13 @@ SegmentResult genCube(Ctx const& c, size_t si, Rng& rng) {
         std::vector<Hit> extra;
         for (double t = F.nearestBeat(ta - lead); t <= tb - lead; t += beat) {
             if (t < ta - lead) continue;
-            bool near = false;
+            bool isNear = false;
             for (auto const& h : hits)
                 if (std::fabs(h.t - t) < 0.09) {
-                    near = true;
+                    isNear = true;
                     break;
                 }
-            if (!near) extra.push_back({t, 0.22f, 0});
+            if (!isNear) extra.push_back({t, 0.22f, 0});
         }
         hits.insert(hits.end(), extra.begin(), extra.end());
         std::sort(hits.begin(), hits.end(), [](Hit const& a, Hit const& b) { return a.t < b.t; });
