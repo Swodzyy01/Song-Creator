@@ -1,0 +1,44 @@
+{
+	"geode": "5.11.2",
+	"gd": {
+		"win": "2.2081",
+		"android": "2.2081",
+		"mac": "2.2081",
+		"ios": "2.2081"
+	},
+	"id": "yourname.ai-level-studio",
+	"name": "AI Level Studio",
+	"version": "v1.0.0",
+	"developer": "YourName",
+	"description": "Pick a song and a difficulty - the AI listens to the music, thinks on a black screen and builds a decorated level.",
+	"repository": "https://github.com/yourname/ai-level-studio",
+	"tags": ["editor", "content", "utility", "offline"],
+	"resources": {
+		"sprites": ["resources/*.png"]
+	},
+	"settings": {
+		"think-depth": {
+			"name": "Thinking depth",
+			"description": "How many level variants the AI composes and tests for every part of the song. 1 = quick, 5 = maximum (can take a while on a phone).",
+			"type": "int",
+			"default": 4,
+			"min": 1,
+			"max": 5
+		},
+		"open-mode": {
+			"name": "When the level is ready",
+			"description": "Where to go after the black screen: the level page (play / edit from there) or straight into the editor.",
+			"type": "string",
+			"default": "Level page",
+			"one-of": ["Level page", "Editor"]
+		},
+		"sync-offset": {
+			"name": "Sync offset (ms)",
+			"description": "Obstacles feel late? Use a negative value. Too early? Use a positive value.",
+			"type": "int",
+			"default": 0,
+			"min": -300,
+			"max": 300
+		}
+	}
+}
