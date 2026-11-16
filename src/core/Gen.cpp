@@ -270,7 +270,7 @@ SegmentResult genCube(Ctx const& c, size_t si, Rng& rng) {
 bool isNear = false;
 
 for (auto const& e : extra) {
-    if (std::abs(e.x - t) < 0.06f) {
+if (std::abs(e.t - t) < 0.06f) {
         isNear = true;
         break;
     }
