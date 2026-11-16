@@ -77,7 +77,7 @@ bool ThinkingLayer::init(SongInfo const& song, double totalSeconds, ais::Setting
     // ---- start: read the song in slices on the main thread -------------------------------------------------
     pushLine("song: " + shorten(song.title, 48) + (song.official ? " (game track)" : " (id " + std::to_string(song.id) + ")"));
     pushLine("reading the song file...");
-    bool opened = fileExists(song.path) && m_dec.begin(song.path, settings.lengthSec + 2.0);
+    bool opened = fileExists(song.path) && m_dec.begin(song.path, settings.startSec + settings.lengthSec + 2.0);
     if (!opened) {
         pushLine("could not open the song file" + (m_dec.error.empty() ? std::string() : " (" + m_dec.error + ")") + " -> generic beat grid");
         startWorker();
@@ -99,6 +99,15 @@ void ThinkingLayer::startWorker() {
     if (m_dec.ok()) {
         m_job->pcm = m_dec.take();
         m_job->hasPcm = true;
+        // the analysis only sees the part of the song the level covers: drop everything before the start point
+        size_t skip = size_t(m_s.startSec * double(m_job->pcm.sampleRate));
+        if (skip > 0 && skip + size_t(m_job->pcm.sampleRate) * 6 < m_job->pcm.mono.size()) {
+            m_job->pcm.mono.erase(m_job->pcm.mono.begin(), m_job->pcm.mono.begin() + long(skip));
+            pushLine("skipping to " + mmss(m_s.startSec) + " in the song");
+        } else if (skip > 0) {
+            pushLine("the start point is past the end of what could be decoded -> starting from the beginning");
+            m_s.startSec = 0.0;
+        }
         pushLine("decoded " + mmss(m_job->pcm.duration()) + " of audio");
     } else if (!m_dec.error.empty()) {
         pushLine("decode problem: " + m_dec.error + " -> generic beat grid");
@@ -106,7 +115,7 @@ void ThinkingLayer::startWorker() {
     auto job = m_job;
     ais::Settings S = m_s;
     std::string title = m_song.title;
-    double total = m_total;
+    double total = std::max(15.0, m_total - m_s.startSec);
     m_thread = std::thread([job, S, title, total] {
         try {
             ais::RunHooks H;

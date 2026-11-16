@@ -55,6 +55,7 @@ struct Look {
     Col bg, ground, obj, accent, line;
     Col d2, d3, d4;
     double hue = 0;
+    double sat = 0.9;
 };
 
 double baseHue(int style, Features const& F) {
@@ -76,6 +77,7 @@ Look lookFor(int style, Features const& F, SecKind k, int idx, float intensity) 
     }
     Look L;
     L.hue = h;
+    L.sat = p.sat;
     L.bg = hsv(h, p.sat, clampd(p.vbg * heat, 0.03, 0.8));
     L.ground = hsv(h, p.sat * 0.95, clampd(p.vgr * heat, 0.05, 0.9));
     L.obj = hsv(h + 0.04 + (k == SecKind::Drop ? 0.04 : 0.0), style == 3 ? 0.55 : 0.70, 1.0);
@@ -87,14 +89,23 @@ Look lookFor(int style, Features const& F, SecKind k, int idx, float intensity) 
     return L;
 }
 
-void emitColor(std::vector<Obj>& out, double x, int chan, Col c, double dur, double opacity = 1.0) {
+Obj plain(int id, double x, double y, std::string kv = "") {
     Obj o;
-    o.id = ID_TRIGGER_COLOR;
+    o.id = id;
     o.x = float(x);
-    o.y = 465.f;
-    o.kv = ",7," + std::to_string(c.r) + ",8," + std::to_string(c.g) + ",9," + std::to_string(c.b) + ",10," + fmtNum(dur) + ",23," + std::to_string(chan) + ",35," +
-           fmtNum(opacity) + ",36,1";
-    out.push_back(o);
+    o.y = float(y);
+    o.kv = std::move(kv);
+    return o;
+}
+
+void emitColor(std::vector<Obj>& out, double x, int chan, Col c, double dur, double opacity = 1.0) {
+    out.push_back(plain(ID_TRIGGER_COLOR, x, 465.0,
+                        ",7," + std::to_string(c.r) + ",8," + std::to_string(c.g) + ",9," + std::to_string(c.b) + ",10," + fmtNum(dur) + ",23," + std::to_string(chan) + ",35," +
+                            fmtNum(opacity) + ",36,1"));
+}
+
+void emitShake(std::vector<Obj>& out, double x, double strength, double dur) {
+    out.push_back(plain(ID_SHAKE, x, 495.0, ",10," + fmtNum(dur) + ",75," + fmtNum(strength) + ",76,0,36,1"));
 }
 
 }  // namespace
@@ -119,6 +130,7 @@ DecorStats decorate(Level& lv, Features const& F, Settings const& S, Palette& pa
     }
     Rng rng(mix64(seed ^ 0xDEC0DEull));
     double beat = 60.0 / F.bpm;
+    bool swap = S.slopeSwap;
 
     std::vector<Look> looks;
     for (size_t i = 0; i < lv.segs.size(); ++i) looks.push_back(lookFor(style, F, lv.segs[i].kind, int(i), lv.segs[i].intensity));
@@ -138,17 +150,27 @@ DecorStats decorate(Level& lv, Features const& F, Settings const& S, Palette& pa
     pal.d2 = L0.d2;
     pal.d3 = L0.d3;
     pal.d4 = L0.d4;
+    pal.d4a = 0.35f;
 
     std::vector<Obj>& out = lv.objs;
     size_t before = out.size();
 
-    // --- palette change at every segment boundary --------------------------------------------------
+    // --- palette change at every segment boundary + a big hit on every drop -------------------------------------
     double fade = clampd(beat * 4.0, 0.8, 2.5);
     for (size_t i = 1; i < lv.segs.size(); ++i) {
         double x = lv.X(lv.segs[i].t0);
         Look const& L = looks[i];
-        emitColor(out, x, 1000, L.bg, fade);
-        emitColor(out, x, 1001, L.ground, fade);
+        bool dropHit = lv.segs[i].kind == SecKind::Drop && lv.segs[i - 1].kind != SecKind::Drop;
+        if (dropHit) {  // white flash that decays into the drop palette, and the screen shakes
+            emitColor(out, x - 6.0, 1000, Col{255, 255, 255}, 0.0);
+            emitColor(out, x - 2.0, 1001, mixc(L.ground, Col{255, 255, 255}, 0.6), 0.0);
+            emitColor(out, x + 4.0, 1000, L.bg, 0.9);
+            emitColor(out, x + 4.0, 1001, L.ground, 1.1);
+            emitShake(out, x, 1.6, 0.55);
+        } else {
+            emitColor(out, x, 1000, L.bg, fade);
+            emitColor(out, x, 1001, L.ground, fade);
+        }
         emitColor(out, x, 1009, mixc(L.ground, L.bg, 0.5), fade);
         emitColor(out, x, 1004, L.obj, fade * 0.6);
         emitColor(out, x, 1002, L.line, fade);
@@ -159,7 +181,24 @@ DecorStats decorate(Level& lv, Features const& F, Settings const& S, Palette& pa
         ++st.sectionChanges;
     }
 
-    // --- pulses on the beat ---------------------------------------------------------------------------
+    // --- the accent colours drift every bar so nothing ever sits still ---------------------------------------------
+    {
+        double bar = beat * 4.0;
+        int bi = 1;
+        for (double t = F.beatOffset + bar; t < lv.endT - 1.0; t += bar, ++bi) {
+            if (t < 2.0) continue;
+            size_t si = segIndexAt(t);
+            Look const& L = looks[si];
+            double amp = style == 3 ? 0.06 : 0.035;
+            double x = lv.X(t);
+            double d = bar * 0.95;
+            emitColor(out, x, 1, hsv(L.hue + 0.08 + amp * std::sin(bi * 0.55), 0.90, 1.0), d, pal.d1a);
+            emitColor(out, x, 2, hsv(L.hue + 0.15 + amp * std::sin(bi * 0.55 + 1.3), 0.80, 0.90), d, pal.d2a);
+            emitColor(out, x, 3, hsv(L.hue - 0.10 + amp * std::sin(bi * 0.55 + 2.6), 0.80, 0.80), d, pal.d3a);
+        }
+    }
+
+    // --- pulses on the beat ---------------------------------------------------------------------------------------
     double fb = clampd(beat * 0.9, 0.18, 0.45);
     double lastBass = -1, lastMid = -1;
     for (auto const& o : F.onsets) {
@@ -188,8 +227,10 @@ DecorStats decorate(Level& lv, Features const& F, Settings const& S, Palette& pa
         }
     }
 
-    // --- hanging bars above the playfield of grounded sections --------------------------------------------
+    // --- decoration above the playfield of grounded sections (rows 8-10: no cube can reach them) --------------------
+    const double rowTop = kGroundY + kBlock * 10;
     double lastBar = -9;
+    double lastEdge = -9;
     for (auto const& o : F.onsets) {
         if (o.band != 0 || o.strength < 0.60f) continue;
         size_t si = segIndexAt(o.t);
@@ -198,28 +239,49 @@ DecorStats decorate(Level& lv, Features const& F, Settings const& S, Palette& pa
         lastBar = o.t;
         double x = lv.X(o.t);
         int len = 1 + int(double(o.strength) * 2.99);
-        for (int k = 0; k < len; ++k) {
-            Obj b;
-            b.id = ID_BLOCK;
-            b.x = float(x);
-            b.y = float(kGroundY + kBlock * (10 - k));
-            b.kv = ",21,1";
-            out.push_back(b);
-        }
-        if (style == 0 && len >= 2) {  // stalactites for hell (these sit 7+ rows up, no cube can reach them)
-            Obj s;
-            s.id = ID_SPIKE;
-            s.x = float(x);
-            s.y = float(kGroundY + kBlock * (10 - len));
-            s.kv = ",6,180,21,1";
-            out.push_back(s);
+        if (style == 1) len += 1;  // vines hang lower
+        for (int k = 0; k < len; ++k) out.push_back(plain(ID_BLOCK, x, rowTop - kBlock * k, style == 1 ? ",21,2" : ",21,1"));
+        double tip = rowTop - kBlock * len;
+        if (style == 0) {  // hell: stalactite + now and then a spinning saw
+            if (len >= 2) out.push_back(plain(ID_SPIKE, x, tip, ",6,180,21,1"));
+            if (o.strength > 0.8f && rng.chance(0.5)) out.push_back(plain(rng.chance(0.5) ? ID_SAW_MED : ID_SAW_SMALL, x + 45.0, rowTop - kBlock * 0.5, ",21,2"));
+        } else if (style == 1) {  // green: vines end in a leaf
+            out.push_back(slopeObj(x, tip, 2, swap));
+            out.push_back(slopeObj(x + kBlock, tip, 3, swap));
+        } else if (style == 2) {  // yellow: hanging lights, a dotted line
+            out.push_back(plain(ID_BLOCK, x, tip - kBlock, ",21,2"));
+            out.push_back(plain(ID_BLOCK, x, tip - kBlock * 3, ",21,3"));
+        } else {  // music: pointed tips, saws on the loudest hits
+            out.push_back(slopeObj(x, tip, 2, swap));
+            out.push_back(slopeObj(x - kBlock, tip, 3, swap));
+            if (o.strength > 0.85f) out.push_back(plain(ID_SAW_SMALL, x, tip - kBlock * 1.5, ",21,3"));
         }
         ++st.bars;
+    }
+    // zigzag ceiling edge in grounded drops: a row of downward triangles on the beat
+    for (size_t si = 0; si < lv.segs.size(); ++si) {
+        Segment const& sg = lv.segs[si];
+        if (sg.mode != Mode::Cube || sg.kind != SecKind::Drop) continue;
+        double bar = beat * 4.0;
+        for (double t = F.nearestBeat(sg.t0 + 1.5); t < sg.t1 - 1.0; t += bar) {
+            if (t - lastEdge < bar * 0.9) continue;
+            lastEdge = t;
+            double x = lv.X(t);
+            for (int k = 0; k < 4; ++k) {
+                Obj a = slopeObj(x + 2 * k * kBlock, rowTop, 3, swap);
+                Obj b = slopeObj(x + (2 * k + 1) * kBlock, rowTop, 2, swap);
+                a.kv += ",21,2";
+                b.kv += ",21,2";
+                out.push_back(a);
+                out.push_back(b);
+            }
+            ++st.bars;
+        }
     }
     (void)rng;
     st.triggers = 0;
     for (size_t i = before; i < out.size(); ++i)
-        if (out[i].id == ID_TRIGGER_COLOR) ++st.triggers;
+        if (out[i].id == ID_TRIGGER_COLOR || out[i].id == ID_SHAKE) ++st.triggers;
     return st;
 }
 

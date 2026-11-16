@@ -36,6 +36,7 @@ struct Features {
     double frameT0 = 0.02322;  // time of the centre of frame 0
     std::vector<float> env;    // combined onset-strength envelope, ~0..1
     std::vector<float> loud;   // smoothed loudness 0..1 per frame
+    std::vector<float> pitch;  // melody contour 0 (low) .. 1 (high): energy-weighted log-frequency centroid, 200 Hz - 4 kHz
     std::vector<Onset> onsets;
     double bpm = 120.0;
     double beatOffset = 0.0;  // time of first beat
@@ -50,6 +51,7 @@ struct Features {
 
     float envAt(double t) const;
     float intensityAt(double t) const;
+    float pitchAt(double t) const;
     double nearestBeat(double t) const;  // returns t if no beat grid
     float sectionEnergyAt(double t) const;
 };

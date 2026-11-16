@@ -83,7 +83,7 @@ struct FFT {
 struct Frames {
     std::vector<float> fb, fm, fh;  // spectral flux per band
     std::vector<float> eb, em, eh;  // band energy
-    std::vector<float> rms, cent;
+    std::vector<float> rms, cent, pitch;
     int sr = 22050;
     size_t count() const { return rms.size(); }
 };
@@ -116,7 +116,10 @@ Frames stft(std::vector<float> const& x, int sr, ProgressFn const& prog, CancelF
     int b0 = std::max(1, int(30.0 / binHz)), b1 = int(150.0 / binHz) + 1, b2 = int(2000.0 / binHz) + 1;
     int b3 = std::min(kN / 2, int(10000.0 / binHz) + 1);
     std::vector<float> re(kN), im(kN), prevL(kN / 2, 0.f);
-    for (auto* v : {&F.fb, &F.fm, &F.fh, &F.eb, &F.em, &F.eh, &F.rms, &F.cent}) v->reserve(size_t(frames));
+    int kLoP = std::max(1, int(200.0 / binHz)), kHiP = std::min(kN / 2, int(4000.0 / binHz));
+    std::vector<double> lg(size_t(kN / 2), 0.0);
+    for (int k = 1; k < kN / 2; ++k) lg[size_t(k)] = std::log2(std::max(1.0, double(k) * binHz / 200.0));
+    for (auto* v : {&F.fb, &F.fm, &F.fh, &F.eb, &F.em, &F.eh, &F.rms, &F.cent, &F.pitch}) v->reserve(size_t(frames));
     for (int f = 0; f < frames; ++f) {
         if (cancelled && (f & 255) == 0 && cancelled()) break;
         float const* p = &x[size_t(f) * kH];
@@ -128,7 +131,7 @@ Frames stft(std::vector<float> const& x, int sr, ProgressFn const& prog, CancelF
         }
         fft.run(re.data(), im.data());
         double e[3] = {0, 0, 0}, fl[3] = {0, 0, 0};
-        double sumMag = 0, sumKMag = 0;
+        double sumMag = 0, sumKMag = 0, pw = 0, pl = 0;
         for (int k = 1; k < kN / 2; ++k) {
             float mag = std::sqrt(re[size_t(k)] * re[size_t(k)] + im[size_t(k)] * im[size_t(k)]) / (kN / 4.0f);
             float l = std::log1p(100.f * mag);
@@ -136,6 +139,10 @@ Frames stft(std::vector<float> const& x, int sr, ProgressFn const& prog, CancelF
             prevL[size_t(k)] = l;
             sumMag += double(mag);
             sumKMag += double(mag) * k;
+            if (k >= kLoP && k < kHiP) {
+                pw += double(mag);
+                pl += double(mag) * lg[size_t(k)];
+            }
             int band = (k >= b0 && k < b1) ? 0 : (k >= b1 && k < b2) ? 1 : (k >= b2 && k < b3) ? 2 : -1;
             if (band < 0) continue;
             e[band] += double(mag) * double(mag);
@@ -149,6 +156,7 @@ Frames stft(std::vector<float> const& x, int sr, ProgressFn const& prog, CancelF
         F.eh.push_back(float(e[2]));
         F.rms.push_back(float(std::sqrt(sq / kN)));
         F.cent.push_back(sumMag > 1e-9 ? float(sumKMag / sumMag * binHz) : 0.f);
+        F.pitch.push_back(pw > 1e-4 ? float(pl / pw) : -1.f);
         if (prog && (f & 255) == 0) prog(float(f) / float(std::max(1, frames)));
     }
     return F;
@@ -307,6 +315,14 @@ float Features::envAt(double t) const {
     return interp(env, (t - frameT0) / hop);
 }
 
+float Features::pitchAt(double t) const {
+    if (pitch.empty()) return 0.5f;
+    double pos = (t - frameT0) / hop;
+    if (pos <= 0) return pitch.front();
+    if (pos >= double(pitch.size() - 1)) return pitch.back();
+    return interp(pitch, pos);
+}
+
 float Features::intensityAt(double t) const {
     if (loud.empty()) return 0.5f;
     double pos = (t - frameT0) / hop;
@@ -374,6 +390,23 @@ Features analyse(PCM const& pcm, double maxSeconds, ProgressFn const& progress, 
     F.loud.resize(n);
     for (size_t i = 0; i < n; ++i) F.loud[i] = clampf((dbs[i] - lo) / (hi - lo), 0.f, 1.f);
     F.dynamics = clampf((percentile(dbs, 0.90) - percentile(dbs, 0.10)) / 24.f, 0.f, 1.f);
+
+    // --- melody contour (where the sound sits in frequency, smoothed) ------------------------------------------
+    {
+        std::vector<float> raw(n);
+        float last = 1.5f;
+        for (size_t i = 0; i < n; ++i) {
+            float v = fr.pitch[i];
+            if (v < 0.f) v = last;
+            else last = v;
+            raw[i] = v;
+        }
+        auto sm = movAvg(raw, std::max(1, int(0.15 / F.hop)));
+        float plo = percentile(sm, 0.10), phi = percentile(sm, 0.90);
+        if (phi - plo < 0.05f) phi = plo + 0.05f;
+        F.pitch.resize(n);
+        for (size_t i = 0; i < n; ++i) F.pitch[i] = clampf((sm[i] - plo) / (phi - plo), 0.f, 1.f);
+    }
 
     // --- onsets ----------------------------------------------------------------
     auto lm = movAvg(F.env, 12);
@@ -565,6 +598,7 @@ Features syntheticFeatures(double duration, double bpm) {
     size_t n = size_t(duration / F.hop) + 4;
     F.env.assign(n, 0.f);
     F.loud.assign(n, 0.5f);
+    F.pitch.assign(n, 0.5f);
     double p = 60.0 / bpm;
     int i = 0;
     for (double t = 0; t < duration; t += p, ++i) {

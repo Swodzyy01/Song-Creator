@@ -18,6 +18,9 @@ int modePortalId(Mode m);
 int speedPortalId(int speedIdx);
 char const* speedName(int speedIdx);
 std::string mmss(double seconds);
+char const* styleName(Mode m, int style);
+// 45 degree slope. kind: 0 = lower-right solid, 1 = lower-left solid, 2 = upper-right solid, 3 = upper-left solid.
+Obj slopeObj(double x, double y, int kind, bool swap);
 
 struct Segment {
     double t0 = 0, t1 = 0;
@@ -25,6 +28,7 @@ struct Segment {
     int speed = 1;
     SecKind kind = SecKind::Verse;
     float intensity = 0.5f;
+    int style = 0;  // cube: 0 spikes 1 blocks 2 air 3 tight | flight: 0 flow 1 zigzag 2 stairs 3 pinch
 };
 
 // level time (seconds since the player started moving) -> x position
@@ -54,6 +58,8 @@ struct SegmentResult {
     std::vector<Column> cols;
     double colX0 = 0;
     int knots = 0;
+    int slopes = 0;
+    int features = 0;  // wall spikes, teeth rows, floating obstacles
     // shared
     double score = 0, rhythm = 0, coverage = 0, density = 0, variety = 0;
     int repairs = 0;
@@ -73,6 +79,8 @@ struct Level {
     int totalEvents = 0;
     int repairs = 0;
     int flightSegs = 0, flightOk = 0;
+    int slopes = 0, features = 0;
+    int distinctPatterns = 0;
     double X(double t) const { return map.x(t + shift); }
 };
 

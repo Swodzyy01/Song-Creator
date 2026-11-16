@@ -8,13 +8,20 @@
 	},
 	"id": "yourname.ai-level-studio",
 	"name": "AI Level Studio",
-	"version": "v1.0.0",
+	"version": "v1.1.0",
 	"developer": "YourName",
 	"description": "Pick a song and a difficulty - the AI listens to the music, thinks on a black screen and builds a decorated level.",
 	"repository": "https://github.com/yourname/ai-level-studio",
-	"tags": ["editor", "content", "utility", "offline"],
+	"tags": [
+		"editor",
+		"content",
+		"utility",
+		"offline"
+	],
 	"resources": {
-		"sprites": ["resources/*.png"]
+		"sprites": [
+			"resources/*.png"
+		]
 	},
 	"settings": {
 		"think-depth": {
@@ -30,7 +37,10 @@
 			"description": "Where to go after the black screen: the level page (play / edit from there) or straight into the editor.",
 			"type": "string",
 			"default": "Level page",
-			"one-of": ["Level page", "Editor"]
+			"one-of": [
+				"Level page",
+				"Editor"
+			]
 		},
 		"sync-offset": {
 			"name": "Sync offset (ms)",
@@ -39,6 +49,26 @@
 			"default": 0,
 			"min": -300,
 			"max": 300
+		},
+		"ground-offset": {
+			"name": "Lower the level (blocks)",
+			"description": "Moves the whole level down. The default fixes levels that started 2 blocks too high. Use a bigger number if blocks still float, a smaller one if they sink into the floor.",
+			"type": "int",
+			"default": 2,
+			"min": -4,
+			"max": 8
+		},
+		"use-slopes": {
+			"name": "Use slopes",
+			"description": "45 degree slopes on the steps of ship, UFO and wave corridors. Turn off if slopes look wrong in your game.",
+			"type": "bool",
+			"default": true
+		},
+		"slope-swap": {
+			"name": "Mirror slopes",
+			"description": "Turn this on if the slopes point the wrong way (mirrored diagonals).",
+			"type": "bool",
+			"default": false
 		}
 	}
 }

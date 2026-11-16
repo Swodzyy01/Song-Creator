@@ -38,6 +38,11 @@ enum ObjId {
     ID_PORTAL_WAVE = 660,
     ID_TRIGGER_COLOR = 899,
     ID_SPEED_4 = 1334,
+    ID_SLOPE = 289,      // 45 degree slope block
+    ID_SAW_BIG = 88,
+    ID_SAW_MED = 89,
+    ID_SAW_SMALL = 98,
+    ID_SHAKE = 1520,     // shake trigger
 };
 
 struct Obj {

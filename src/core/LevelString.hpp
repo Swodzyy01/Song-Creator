@@ -10,7 +10,8 @@ namespace ais {
 std::string fmtNum(double v);
 
 // The raw, human-readable GD level string: header (colours + start settings) followed by "1,<id>,2,<x>,3,<y>...;" objects.
-std::string buildLevelString(Level const& lv, Palette const& pal);
+// songStart: seconds into the song where the level begins (header song offset). yShift: units subtracted from every y.
+std::string buildLevelString(Level const& lv, Palette const& pal, double songStart = 0.0, int yShift = 0);
 
 // GD stores level strings as base64url(gzip(raw)). Implemented here (fixed-Huffman deflate + LZ77) so the
 // result does not depend on any game API and can be checked against zlib in the tests.

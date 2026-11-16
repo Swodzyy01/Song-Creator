@@ -92,7 +92,8 @@ RunResult runStudio(PCM const* pcm, double songSeconds, Settings S, std::string 
         log(std::string("speeds ") + spd[P.speedMin] + " .. " + spd[P.speedMax] + fmt(", corridor openings from %.1f rows (ship) / %.1f (ufo) / %.1f (wave)", P.shipGap, P.ufoGap, P.waveGap));
     }
     if (P.fp) log(fmt("frame perfect ON: %.0f%% of obstacles are taken from the narrowest windows the simulator found", P.fpChance * 100.0));
-    log("plan: obstacles sit on the kicks (bass hits get priority), corridors turn on the beat grid, every section gets its own mode, speed and palette");
+    if (S.startSec > 0.5) log("the level starts " + mmss(S.startSec) + " into the song and plays it from there");
+    log("plan: obstacles sit on the kicks (bass hits get priority), corridors follow the melody and turn on the beat grid, every section gets its own mode, speed, style and palette");
     uint64_t seed = S.seed ? S.seed : mix64(hashStr(title) ^ (uint64_t(S.difficulty) << 7) ^ (uint64_t(S.rank) << 13) ^ uint64_t(F.bpm * 1000.0));
     log(fmt("seed %.0f", double(seed % 1000000007ull)));
     if (cancelled()) return fail("cancelled");
@@ -112,6 +113,7 @@ RunResult runStudio(PCM const* pcm, double songSeconds, Settings S, std::string 
     stage(0.84f, "Verifying with the physics simulation");
     log(fmt("verification: %.0f cube obstacles simulated frame by frame, %.0f repairs, %.0f/%.0f flight corridors flyable", double(L.totalEvents), double(L.repairs),
             double(L.flightOk), double(L.flightSegs)));
+    log(fmt("variety: %.0f different cube patterns, %.0f slopes and %.0f spike/obstacle extras in the flying parts", double(L.distinctPatterns), double(L.slopes), double(L.features)));
     if (L.totalEvents > 0 && L.minWindowUsed < 99) log(fmt("narrowest click window in the level: %.0f frame(s), %.0f obstacles at 4 frames or less", double(L.minWindowUsed), double(L.tightEvents)));
     if (L.flightSegs && L.flightOk < L.flightSegs) log("warning: some corridors could not be proven flyable - check them in the editor");
 
@@ -124,7 +126,7 @@ RunResult runStudio(PCM const* pcm, double songSeconds, Settings S, std::string 
 
     // ---- 7. pack ---------------------------------------------------------------------------------------
     stage(0.95f, "Packing the level");
-    std::string raw = buildLevelString(L, pal);
+    std::string raw = buildLevelString(L, pal, S.startSec, S.lowerBlocks * 30);
     R.packed = gzipBase64(raw);
     R.objects = int(L.objs.size());
     R.triggers = ds.triggers;

@@ -9,7 +9,8 @@ namespace aisgd {
 
 namespace {
 constexpr int kQuickRanks[7] = {1000, 500, 250, 100, 50, 10, 1};
-}
+constexpr double kMinLength = 20.0;
+}  // namespace
 
 StudioPopup* StudioPopup::create(SongInfo const& song) {
     auto* ret = new StudioPopup();
@@ -21,30 +22,40 @@ StudioPopup* StudioPopup::create(SongInfo const& song) {
     return nullptr;
 }
 
+double StudioPopup::remaining() const { return std::max(0.0, m_total - m_s.startSec); }
+
 bool StudioPopup::init(SongInfo const& song) {
     if (!Popup::init(440.f, 290.f)) return false;
     this->setTitle("AI Level Studio");
     m_song = song;
-    m_total = song.duration > 20.0 ? std::min(song.duration, 600.0) : 180.0;
+    m_total = song.duration > 30.0 ? std::min(song.duration, 600.0) : 180.0;
     m_s.difficulty = ais::Insane;
     m_s.decor = 0;
+    m_s.startSec = 0.0;
     m_s.lengthSec = std::min(m_total, 90.0);
 
     // ---- song ---------------------------------------------------------------------------------------
     auto* title = makeLabel(shorten(song.title, 40).c_str(), "goldFont.fnt", 0.6f, CCPoint{0.f, 0.5f});
     title->limitLabelWidth(300.f, 0.6f, 0.2f);
-    m_mainLayer->addChildAtPosition(title, Anchor::Center, CCPoint{-205.f, 106.f});
+    m_mainLayer->addChildAtPosition(title, Anchor::Center, CCPoint{-205.f, 108.f});
     std::string dur = song.duration > 1.0 ? "length " + mmss(song.duration) : "length unknown";
-    m_mainLayer->addChildAtPosition(makeLabel(dur.c_str(), "chatFont.fnt", 0.6f, CCPoint{1.f, 0.5f}, ccColor3B{190, 190, 190}), Anchor::Center, CCPoint{205.f, 106.f});
+    m_mainLayer->addChildAtPosition(makeLabel(dur.c_str(), "chatFont.fnt", 0.6f, CCPoint{1.f, 0.5f}, ccColor3B{190, 190, 190}), Anchor::Center, CCPoint{205.f, 108.f});
 
-    // ---- how much of the song ----------------------------------------------------------------------
-    m_mainLayer->addChildAtPosition(makeLabel("Level length", "bigFont.fnt", 0.4f, CCPoint{0.f, 0.5f}), Anchor::Center, CCPoint{-205.f, 80.f});
+    // ---- where the music starts and how much of it the level covers ---------------------------------------
+    m_mainLayer->addChildAtPosition(makeLabel("Start at", "bigFont.fnt", 0.4f, CCPoint{0.f, 0.5f}), Anchor::Center, CCPoint{-205.f, 86.f});
+    m_startSlider = Slider::create(this, menu_selector(StudioPopup::onStart), 0.75f);
+    m_startSlider->setValue(0.f);
+    m_mainLayer->addChildAtPosition(m_startSlider, Anchor::Center, CCPoint{-5.f, 86.f});
+    m_startLabel = makeLabel("", "bigFont.fnt", 0.36f, CCPoint{1.f, 0.5f});
+    m_mainLayer->addChildAtPosition(m_startLabel, Anchor::Center, CCPoint{205.f, 86.f});
+
+    m_mainLayer->addChildAtPosition(makeLabel("Level length", "bigFont.fnt", 0.4f, CCPoint{0.f, 0.5f}), Anchor::Center, CCPoint{-205.f, 62.f});
     m_slider = Slider::create(this, menu_selector(StudioPopup::onLength), 0.75f);
-    double minLen = std::min(20.0, m_total);
-    m_slider->setValue(m_total > minLen ? float((m_s.lengthSec - minLen) / (m_total - minLen)) : 1.f);
-    m_mainLayer->addChildAtPosition(m_slider, Anchor::Center, CCPoint{-5.f, 80.f});
+    double minLen = std::min(kMinLength, remaining());
+    m_slider->setValue(remaining() > minLen ? float((m_s.lengthSec - minLen) / (remaining() - minLen)) : 1.f);
+    m_mainLayer->addChildAtPosition(m_slider, Anchor::Center, CCPoint{-5.f, 62.f});
     m_lenLabel = makeLabel("", "bigFont.fnt", 0.36f, CCPoint{1.f, 0.5f});
-    m_mainLayer->addChildAtPosition(m_lenLabel, Anchor::Center, CCPoint{205.f, 80.f});
+    m_mainLayer->addChildAtPosition(m_lenLabel, Anchor::Center, CCPoint{205.f, 62.f});
 
     // ---- difficulty ----------------------------------------------------------------------------------
     static int const frames[10] = {1, 2, 3, 4, 5, 7, 8, 6, 9, 10};  // GD's own difficulty icons (demons are numbered oddly)
@@ -53,50 +64,50 @@ bool StudioPopup::init(SongInfo const& song) {
         char name[48];
         std::snprintf(name, sizeof name, "diffIcon_%02d_btn_001.png", frames[i]);
         Chip c = makeChip(34.f, 34.f, abbr[i], 0.45f, safeFrame(name), this, menu_selector(StudioPopup::onDiff), i);
-        m_buttonMenu->addChildAtPosition(c.btn, Anchor::Center, CCPoint{-171.f + 38.f * float(i), 46.f});
+        m_buttonMenu->addChildAtPosition(c.btn, Anchor::Center, CCPoint{-171.f + 38.f * float(i), 28.f});
         m_diff.push_back(c);
     }
     m_diffLabel = makeLabel("", "goldFont.fnt", 0.55f);
-    m_mainLayer->addChildAtPosition(m_diffLabel, Anchor::Center, CCPoint{0.f, 20.f});
+    m_mainLayer->addChildAtPosition(m_diffLabel, Anchor::Center, CCPoint{0.f, 3.f});
 
     // ---- demon list (only for Extreme Demon) ---------------------------------------------------------
     m_rankLabel = makeLabel("Demon List  Top", "bigFont.fnt", 0.38f, CCPoint{0.f, 0.5f});
-    m_mainLayer->addChildAtPosition(m_rankLabel, Anchor::Center, CCPoint{-205.f, -6.f});
+    m_mainLayer->addChildAtPosition(m_rankLabel, Anchor::Center, CCPoint{-205.f, -22.f});
     m_rank = TextInput::create(60.f, "1-1500", "bigFont.fnt");
     m_rank->setFilter("0123456789 topTOP#");
     m_rank->setMaxCharCount(8);
     m_rank->setString("1000");
     m_rank->setCallback([this](std::string const& text) { this->onRankText(text); });
-    m_mainLayer->addChildAtPosition(m_rank, Anchor::Center, CCPoint{-92.f, -6.f});
+    m_mainLayer->addChildAtPosition(m_rank, Anchor::Center, CCPoint{-92.f, -22.f});
     for (int i = 0; i < 7; ++i) {
         std::string t = std::to_string(kQuickRanks[i]);
         Chip c = makeChip(34.f, 24.f, t.c_str(), 0.4f, nullptr, this, menu_selector(StudioPopup::onQuickRank), kQuickRanks[i]);
-        m_buttonMenu->addChildAtPosition(c.btn, Anchor::Center, CCPoint{-48.f + 37.f * float(i), -6.f});
+        m_buttonMenu->addChildAtPosition(c.btn, Anchor::Center, CCPoint{-48.f + 37.f * float(i), -22.f});
         m_quick.push_back(c);
     }
     m_upcoming = makeChip(40.f, 24.f, "UP", 0.4f, nullptr, this, menu_selector(StudioPopup::onUpcoming), 0);
-    m_buttonMenu->addChildAtPosition(m_upcoming.btn, Anchor::Center, CCPoint{196.f, -6.f});
+    m_buttonMenu->addChildAtPosition(m_upcoming.btn, Anchor::Center, CCPoint{196.f, -22.f});
 
     // ---- frame perfect ---------------------------------------------------------------------------------
     m_fp = makeChip(170.f, 24.f, "Frame perfect: OFF", 0.4f, nullptr, this, menu_selector(StudioPopup::onFramePerfect), 0);
-    m_buttonMenu->addChildAtPosition(m_fp.btn, Anchor::Center, CCPoint{-120.f, -36.f});
+    m_buttonMenu->addChildAtPosition(m_fp.btn, Anchor::Center, CCPoint{-120.f, -50.f});
 
     // ---- decoration --------------------------------------------------------------------------------------
-    m_mainLayer->addChildAtPosition(makeLabel("Decoration", "bigFont.fnt", 0.38f, CCPoint{0.f, 0.5f}), Anchor::Center, CCPoint{-205.f, -66.f});
+    m_mainLayer->addChildAtPosition(makeLabel("Decoration", "bigFont.fnt", 0.38f, CCPoint{0.f, 0.5f}), Anchor::Center, CCPoint{-205.f, -78.f});
     static char const* const decorNames[5] = {"Hell", "Green", "Yellow", "Music", "None"};
     for (int i = 0; i < 5; ++i) {
         Chip c = makeChip(62.f, 26.f, decorNames[i], 0.42f, nullptr, this, menu_selector(StudioPopup::onDecor), i);
-        m_buttonMenu->addChildAtPosition(c.btn, Anchor::Center, CCPoint{-96.f + 66.f * float(i), -66.f});
+        m_buttonMenu->addChildAtPosition(c.btn, Anchor::Center, CCPoint{-96.f + 66.f * float(i), -78.f});
         m_decor.push_back(c);
     }
 
     // ---- go ------------------------------------------------------------------------------------------------
     auto* gen = ButtonSprite::create("Generate level");
-    gen->setScale(0.9f);
+    gen->setScale(0.85f);
     auto* genBtn = CCMenuItemSpriteExtra::create(gen, nullptr, this, menu_selector(StudioPopup::onGenerate));
-    m_buttonMenu->addChildAtPosition(genBtn, Anchor::Center, CCPoint{0.f, -106.f});
+    m_buttonMenu->addChildAtPosition(genBtn, Anchor::Center, CCPoint{0.f, -110.f});
     m_hint = makeLabel("", "chatFont.fnt", 0.55f, CCPoint{0.5f, 0.5f}, ccColor3B{170, 170, 185});
-    m_mainLayer->addChildAtPosition(m_hint, Anchor::Center, CCPoint{0.f, -133.f});
+    m_mainLayer->addChildAtPosition(m_hint, Anchor::Center, CCPoint{0.f, -135.f});
 
     m_building = false;
     refresh();
@@ -129,11 +140,12 @@ void StudioPopup::refresh() {
 
     for (size_t i = 0; i < m_decor.size(); ++i) paintChip(m_decor[i], int(i) == m_s.decor);
 
-    std::string len = "up to " + mmss(m_s.lengthSec) + " of " + mmss(m_total);
+    m_startLabel->setString(("from " + mmss(m_s.startSec)).c_str());
+    std::string len = mmss(m_s.startSec) + " - " + mmss(m_s.startSec + m_s.lengthSec) + "  (" + mmss(m_s.lengthSec) + ")";
     m_lenLabel->setString(len.c_str());
     if (extreme) {
-        m_hint->setString(m_s.upcoming ? "Upcoming = harder than the current Top 1, lots of frame perfect"
-                                       : "The AI studies the Top N level and builds at its difficulty (type a rank or pick one)");
+        m_hint->setString(m_s.upcoming ? "Upcoming = harder than the current Top 1, a few real frame perfects"
+                                       : "The AI builds at the difficulty of the Top N level (type a rank or pick one)");
     } else {
         m_hint->setString("Pick Extreme Demon to choose a Demon List rank");
     }
@@ -161,17 +173,15 @@ void StudioPopup::onQuickRank(CCObject* sender) {
 
 void StudioPopup::onUpcoming(CCObject*) {
     m_s.upcoming = !m_s.upcoming;
+    m_building = true;
     if (m_s.upcoming) {
         m_s.rank = 0;
-        m_building = true;
         m_rank->setString("");
-        m_building = false;
     } else {
         m_s.rank = 1000;
-        m_building = true;
         m_rank->setString("1000");
-        m_building = false;
     }
+    m_building = false;
     refresh();
 }
 
@@ -205,20 +215,35 @@ void StudioPopup::onDecor(CCObject* sender) {
     refresh();
 }
 
+void StudioPopup::onStart(CCObject* sender) {
+    float v = static_cast<SliderThumb*>(sender)->getValue();
+    double maxStart = std::max(0.0, m_total - kMinLength);
+    m_s.startSec = std::max(0.0, std::min(maxStart, std::round(double(v) * maxStart / 5.0) * 5.0));
+    // the level can only be as long as what is left of the song
+    double minLen = std::min(kMinLength, remaining());
+    m_s.lengthSec = std::max(minLen, std::min(m_s.lengthSec, remaining()));
+    m_slider->setValue(remaining() > minLen ? float((m_s.lengthSec - minLen) / (remaining() - minLen)) : 1.f);
+    refresh();
+}
+
 void StudioPopup::onLength(CCObject* sender) {
     float v = static_cast<SliderThumb*>(sender)->getValue();
-    double minLen = std::min(20.0, m_total);
-    double sec = minLen + (m_total - minLen) * double(v);
+    double minLen = std::min(kMinLength, remaining());
+    double sec = minLen + (remaining() - minLen) * double(v);
     sec = std::round(sec / 5.0) * 5.0;
-    m_s.lengthSec = std::max(minLen, std::min(m_total, sec));
+    m_s.lengthSec = std::max(minLen, std::min(remaining(), sec));
     refresh();
 }
 
 void StudioPopup::onGenerate(CCObject*) {
     ais::Settings s = m_s;
     if (s.difficulty == ais::ExtremeDemon && !s.upcoming && s.rank <= 0) s.rank = 1000;
-    s.depth = int(Mod::get()->getSettingValue<int64_t>("think-depth"));
-    s.syncOffsetSec = double(Mod::get()->getSettingValue<int64_t>("sync-offset")) / 1000.0;
+    auto* mod = Mod::get();
+    s.depth = int(mod->getSettingValue<int64_t>("think-depth"));
+    s.syncOffsetSec = double(mod->getSettingValue<int64_t>("sync-offset")) / 1000.0;
+    s.lowerBlocks = int(mod->getSettingValue<int64_t>("ground-offset"));
+    s.useSlopes = mod->getSettingValue<bool>("use-slopes");
+    s.slopeSwap = mod->getSettingValue<bool>("slope-swap");
     s.seed = uint64_t(std::chrono::steady_clock::now().time_since_epoch().count());
     if (auto* layer = ThinkingLayer::create(m_song, m_total, s)) layer->show();
 }

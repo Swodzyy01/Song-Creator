@@ -22,6 +22,7 @@ protected:
     void onFramePerfect(CCObject*);
     void onDecor(CCObject* sender);
     void onLength(CCObject* sender);
+    void onStart(CCObject* sender);
     void onGenerate(CCObject*);
     void onRankText(std::string const& text);
 
@@ -38,7 +39,10 @@ private:
     CCLabelBMFont* m_rankLabel = nullptr;
     CCLabelBMFont* m_hint = nullptr;
     TextInput* m_rank = nullptr;
-    Slider* m_slider = nullptr;
+    Slider* m_slider = nullptr;       // level length
+    Slider* m_startSlider = nullptr;  // where in the song the level starts
+    CCLabelBMFont* m_startLabel = nullptr;
+    double remaining() const;
 };
 
 }  // namespace aisgd
